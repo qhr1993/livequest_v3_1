@@ -4,11 +4,11 @@ class PeripheralData:
     NH3 = 0.0
     SO2 = 0.0
     H2S = 0.0
-    time = 999999.99
-    lat = 99.99
-    lon = 99.99
+    time = 0.0
+    lat = 0.0
+    lon = 0.0
     alt = 0.0
-    hdop = 99.99
+    hdop = 0.0
     numSat = 0
     fix = 0
     temp = 0.0
@@ -16,6 +16,12 @@ class PeripheralData:
     date = 0
     lux = 0.0
     current = 0.0
+
+class GasData:
+    NH3 = 0.0
+    SO2 = 0.0
+    H2S = 0.0
+
 class PeripheralBytes:
     def __init__(self, p_data_in):
         import struct
@@ -84,6 +90,45 @@ def _get_sht31_temp_from_buffer(data):
     unadjusted -= 45
     return unadjusted
 
+def _get_filtered_mvolts(adc_instance,vr):
+    iter_t_times = 20
+    iter_times = 0
+    GasData gdata
+    gdata.NH3 = 0
+    gdata.SO2 = 0
+    gdata.H2S = 0
+
+    buff_NH3 = []
+    buff_SO2 = []
+    buff_H2S = []
+    while iter_times<iter_t_times:
+
+        apin0 = adc_instance.channel(pin='P13')
+        adc_instance.vref(vr)
+        buff_NH3.append(apin0.voltage())
+        time.sleep(0.001)
+
+        apin1 = adc_instance.channel(pin='P14')
+        adc_instance.vref(vr)
+        buff_SO2.append(apin1.voltage())
+        time.sleep(0.001)
+
+        apin2 = adc_instance.channel(pin='P15')
+        adc_instance.vref(vr)
+        buff_H2S.append(apin2.voltage())
+        time.sleep(0.001)
+
+        iter_times += 1
+
+    buff_NH3.sort()
+    buff_SO2.sort()
+    buff_H2S.sort()
+
+    gdata.NH3 = (sum(buff_NH3) - buff_NH3[0] - buff_NH3[iter_t_times-1]) / (iter_t_times - 2)
+    gdata.SO2 = (sum(buff_SO2) - buff_SO2[0] - buff_SO2[iter_t_times-1]) / (iter_t_times - 2)
+    gdata.H2S = (sum(buff_H2S) - buff_H2S[0] - buff_H2S[iter_t_times-1]) / (iter_t_times - 2)
+    return gdata
+
 
 def peripheral_query(is_init,p_out_ctrla,p_out_ctrlb):
     import pycom
@@ -94,6 +139,8 @@ def peripheral_query(is_init,p_out_ctrla,p_out_ctrlb):
     import gc
     import sys
     import os
+    import uio
+    import ujson
 
     from machine import UART
     from machine import ADC
@@ -102,74 +149,59 @@ def peripheral_query(is_init,p_out_ctrla,p_out_ctrlb):
     from machine import Pin
     from tsl2591 import TSL2591
 
-    sht31 = 1
+    with uio.open('/flash/configure.json', 'r', encoding = "utf-8") as hdl:
+        parsed_json = ujson.load(hdl)
 
-    bias_nh3 = 595
-    bias_so2 = 596
-    bias_h2s = 597
 
-    di_nh3 = 12.24
-    di_so2 = 12.60
-    di_h2s = 38.00
+    sht31 = parsed_json["firmware"]["sht31"]
 
-    i0_nh3 = -0.36
-    i0_so2 = 0.00
-    i0_h2s = -0.08
+    bias_nh3 = parsed_json["calibration"]["sensor_nh3"]["bias"]
+    bias_so2 = parsed_json["calibration"]["sensor_so2"]["bias"]
+    bias_h2s = parsed_json["calibration"]["sensor_h2s"]["bias"]
 
-    vref = 1094
+    di_nh3 = parsed_json["calibration"]["sensor_nh3"]["di"]
+    di_so2 = parsed_json["calibration"]["sensor_so2"]["di"]
+    di_h2s = parsed_json["calibration"]["sensor_h2s"]["di"]
+
+    i0_nh3 = parsed_json["calibration"]["sensor_nh3"]["i0"]
+    i0_so2 = parsed_json["calibration"]["sensor_so2"]["i0"]
+    i0_h2s = parsed_json["calibration"]["sensor_h2s"]["i0"]
+
+    vref = parsed_json["calibration"]["vref"]
 
     p_data = PeripheralData()
     print('[2]===================')
-    iter = 0
-    buff_h2s = 0
-
-    buff_nh3 = 0
-
-    buff_so2 = 0
 
     adc0 = ADC(id=0)
 
-    while iter<20:
-        #adc0 = ADC(id=0)
-        apin0 = adc0.channel(pin='P13')
-        adc0.vref(vref)
-        buff_nh3 += apin0.voltage()
-        #adc0.deinit()
-        time.sleep(0.001)
-        #adc1 = ADC(id=0)
-        apin1 = adc0.channel(pin='P14')
-        adc0.vref(vref)
-        buff_so2 += apin1.voltage()
-        #adc1.deinit()
-        time.sleep(0.001)
-        #adc2 = ADC(id=0)
-        apin2 = adc0.channel(pin='P15')
-        adc0.vref(vref)
-        buff_h2s += apin2.voltage()
-        #adc2.deinit()
-        time.sleep(0.001)
-        iter += 1
+    outer_iter = 0
+    outer_iter_times = 20
+    outer_buff_NH3 = []
+    outer_buff_SO2 = []
+    outer_buff_NH3 = []
 
-    buff_nh3 /= 20
-    buff_so2 /= 20
-    buff_h2s /= 20
+    while outer_iter < outer_iter_times:
+        filtered_mvolts = _get_filtered_mvolts(adc0,vref)
+        outer_buff_NH3.append(filtered_mvolts.NH3)
+        outer_buff_SO2.append(filtered_mvolts.SO2)
+        outer_buff_H2S.append(filtered_mvolts.H2S)
+        outer_iter = outer_iter + 1
+    buff_nh3 = sum(outer_buff_NH3)/outer_iter_times
+    buff_so2 = sum(outer_buff_SO2)/outer_iter_times
+    buff_h2s = sum(outer_buff_H2S)/outer_iter_times
 
-    #adc0_str = '%.2f' % (round((apin0()*1100/4096-577)/3.83,1))
-    buff_nh3 = round((buff_nh3 - bias_nh3 - i0_nh3*624) * 50/(di_nh3*624),1)
+    buff_nh3 = round((buff_nh3 - bias_nh3 - i0_nh3*47*0.624) * 50/(di_nh3*47*0.624),1)
     adc0_str = '%.1f' % ((buff_nh3))
     p_data.NH3 = (buff_nh3)
-    #p_data.NH3 = (round((apin0()*1100/4096-577)/3.83,1))
     print('[2]NH3: '+adc0_str)
 
-    buff_so2 = round((buff_so2 - bias_so2)/((di_so2 / 20 - i0_so2)*47*0.624),1)
+    buff_so2 = round((buff_so2 - bias_so2 - i0_so2*47*0.624) * 20/(di_so2*47*0.624),1)
     adc1_str = '%.1f' % ((buff_so2))
-    #p_data.SO2 = apin1()*1100/4096
     p_data.SO2 = ((buff_so2))
     print('[2]SO2: '+adc1_str)
 
-    buff_h2s = round((buff_h2s - bias_h2s)/((di_h2s / 50 - i0_h2s)*47*0.624),1)
+    buff_h2s = round((buff_h2s - bias_h2s - i0_h2s*47*0.624) * 50/(di_h2s*47*0.624),1)
     adc2_str = '%.1f' % ((buff_h2s))
-    #p_data.H2S = apin2()*1100/4096
     p_data.H2S = ((buff_h2s))
     print('[2]H2S: '+adc2_str)
     adc0.deinit()

@@ -12,9 +12,19 @@ def make_special_char(pac):
             rtn_packet = rtn_packet + bytes([pac[i]])
     return rtn_packet
 
+def make_data_bytes(rdata,type):
+    #type 0 => float
+    #type 1 => integer
+    if type == 0:
+        rtn_bytes = bytes([rdata[3]]) + bytes([rdata[2]]) + bytes([rdata[1]]) + bytes([rdata[0]])
+    elif type == 1:
+        rtn_bytes = bytes([rdata[1]]) + bytes([rdata[0]]) + bytes([rdata[3]]) + bytes([rdata[2]])
+    return rtn_bytes
+
 from machine import UART
 from machine import Pin
 from machine import SPI
+from machine import Timer
 import machine
 import time
 import sys
@@ -23,8 +33,8 @@ import pycom
 import peripheral_query
 import os
 import gc
-from machine import Timer
-
+import uos
+import ujson
 
 class Clock:
     def __init__(self):
@@ -45,6 +55,34 @@ class Clock:
         gc.collect()
         #print(gc.mem_free())
 
+with uio.open('/flash/configure.json', 'r', encoding = "utf-8") as handle:
+    psd_json = ujson.load(handle)
+
+p_in_mod = Pin('P12', mode=Pin.IN , pull = Pin.PULL_UP)
+
+if p_in_mod() == 0:
+    print('[1]MODE_1 selected. Entering sensor zero-point calibration mode...')
+    calibration(1, psd_json["calibration"]["vref"])
+    break
+p_in_mod.deinit()
+
+time.sleep(0.5)
+
+p_in_mod = Pin('P12', mode=Pin.IN , pull = Pin.PULL_UP)
+p_out_mod = Pin('P11', mode=Pin.OUT)
+
+p_out_mod.value(0)
+time.sleep(0.5)
+
+if p_in_mod() == 0:
+    print('[1]MODE_0 selected. Entering ADC bias calibration mode...')
+    calibration(0,psd_json["calibration"]["vref"])
+    break
+p_in_mod.deinit()
+p_out_mod.deinit()
+
+print('[1]MODE_2 selected. Entering normal operation...')
+
 uart_as62 = UART(1, baudrate=9600,pins=('P3','P4'))
 time.sleep(0.05)
 p_out_md1 = Pin('P22', mode=Pin.OUT)
@@ -61,7 +99,7 @@ time.sleep(0.5)
 p_out_led = Pin('P2', mode=Pin.OUT)
 p_out_led.value(1)
 
-dev_addr = bytes([0x00,0x00,0x0F,0x31])
+dev_addr = bytes([0x00,0x00,0x0F]) + bytes([psd_json["firmware"]["devaddr"]])
 lora_addr = dev_addr[2:4]
 
 cfg_r_str = 'NO'
@@ -82,7 +120,7 @@ state = 0
 # state = 0 unregistered
 # state = 1 registered
 gateway_addr = bytes([0x00,0x00,0x00,0x00])
-header = bytes([0x7E,0x01,0xF4])
+header = bytes([0x7E]) + struct.pack(">H",psd_json["firmware"]["protocol"])
 packet_number = 0
 time_slot = 30
 uart_as62 = UART(1, baudrate=9600,pins=('P3','P4'))
@@ -141,20 +179,19 @@ while (1):
                     print('[1]Peripheral data collected...')
                     upload_raw = (header[1:3] + dev_addr + b'\x00' + struct.pack('>h',packet_number)
                                 + b'\x00\x76\x09' + b'\x0D'
-                                + b'\x00\x01\x00\x01\x00' + bytes([pdata_bytes.temp[1]]) + bytes([pdata_bytes.temp[0]]) + bytes([pdata_bytes.temp[3]]) + bytes([pdata_bytes.temp[2]])
-                                + b'\x00\x02\x00\x02\x00' + bytes([pdata_bytes.humd[1]]) + bytes([pdata_bytes.humd[0]]) + bytes([pdata_bytes.humd[3]]) + bytes([pdata_bytes.humd[2]])
-                                + b'\x00\x03\x00\x06\x01' + bytes([pdata_bytes.CO2[3]]) + bytes([pdata_bytes.CO2[2]]) + bytes([pdata_bytes.CO2[1]]) + bytes([pdata_bytes.CO2[0]])
-                                + b'\x00\x04\x00\x15\x00' + bytes([pdata_bytes.NH3[1]]) + bytes([pdata_bytes.NH3[0]]) + bytes([pdata_bytes.NH3[3]]) + bytes([pdata_bytes.NH3[2]])
-                                + b'\x00\x05\x00\x23\x00' + bytes([pdata_bytes.SO2[1]]) + bytes([pdata_bytes.SO2[0]]) + bytes([pdata_bytes.SO2[3]]) + bytes([pdata_bytes.SO2[2]])
-                                + b'\x00\x06\x00\x14\x00' + bytes([pdata_bytes.H2S[1]]) + bytes([pdata_bytes.H2S[0]]) + bytes([pdata_bytes.H2S[3]]) + bytes([pdata_bytes.H2S[2]])
-                                + b'\x00\x07\x00\xFA\x00' + bytes([pdata_bytes.lat[1]]) + bytes([pdata_bytes.lat[0]]) + bytes([pdata_bytes.lat[3]]) + bytes([pdata_bytes.lat[2]])
-                                + b'\x00\x08\x00\xFB\x00' + bytes([pdata_bytes.lon[1]]) + bytes([pdata_bytes.lon[0]]) + bytes([pdata_bytes.lon[3]]) + bytes([pdata_bytes.lon[2]])
-                                + b'\x00\x09\x00\xFC\x00' + bytes([pdata_bytes.alt[1]]) + bytes([pdata_bytes.alt[0]]) + bytes([pdata_bytes.alt[3]]) + bytes([pdata_bytes.alt[2]])
-                                + b'\x00\x0A\x00\xFD\x01' + bytes([pdata_bytes.date[3]]) + bytes([pdata_bytes.date[2]]) + bytes([pdata_bytes.date[1]]) + bytes([pdata_bytes.date[0]])
-                                + b'\x00\x0B\x00\xFE\x00' + bytes([pdata_bytes.time[1]]) + bytes([pdata_bytes.time[0]]) + bytes([pdata_bytes.time[3]]) + bytes([pdata_bytes.time[2]])
-                                + b'\x00\x0C\x00\x05\x00' + bytes([pdata_bytes.lux[1]]) + bytes([pdata_bytes.lux[0]]) + bytes([pdata_bytes.lux[3]]) + bytes([pdata_bytes.lux[2]])
-                                + b'\x00\x0D\x00\xF9\x00' + bytes([pdata_bytes.current[1]]) + bytes([pdata_bytes.current[0]]) + bytes([pdata_bytes.current[3]]) + bytes([pdata_bytes.current[2]]))
-                    #print(upload_raw)
+                                + b'\x00\x01\x00\x01\x00' + make_data_bytes(pdata_bytes.temp,1)
+                                + b'\x00\x02\x00\x02\x00' + make_data_bytes(pdata_bytes.humd,1)
+                                + b'\x00\x03\x00\x06\x01' + make_data_bytes(pdata_bytes.CO2,0)
+                                + b'\x00\x04\x00\x15\x00' + make_data_bytes(pdata_bytes.NH3,1)
+                                + b'\x00\x05\x00\x23\x00' + make_data_bytes(pdata_bytes.SO2,1)
+                                + b'\x00\x06\x00\x14\x00' + make_data_bytes(pdata_bytes.H2S,1)
+                                + b'\x00\x07\x00\xFA\x00' + make_data_bytes(pdata_bytes.lat,1)
+                                + b'\x00\x08\x00\xFB\x00' + make_data_bytes(pdata_bytes.lon,1)
+                                + b'\x00\x09\x00\xFC\x00' + make_data_bytes(pdata_bytes.alt,1)
+                                + b'\x00\x0A\x00\xFD\x01' + make_data_bytes(pdata_bytes.date,0)
+                                + b'\x00\x0B\x00\xFE\x00' + make_data_bytes(pdata_bytes.time,1)
+                                + b'\x00\x0C\x00\x05\x00' + make_data_bytes(pdata_bytes.lux,1)
+                                + b'\x00\x0D\x00\xF9\x00' + make_data_bytes(pdata_bytes.current,1)
                     crc = 0x00
                     for bit in upload_raw:
                         crc = crc + bit
@@ -168,9 +205,7 @@ while (1):
                     p_out_led.value(1)
                     time.sleep(0.1)
                     p_out_led.value(0)
-                    #pycom.rgbled(0x001100)
                     packet_number += 1
                     time.sleep(0.01)
-                    #pycom.rgbled(0x000000)
                     gc.collect()
                     print(gc.mem_free())

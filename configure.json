@@ -1,0 +1,29 @@
+{
+  "firmware": {
+    "version": 3,
+    "protocol": 500,
+    "devaddr": 31,
+    "sht31": 1
+  },
+  "calibration": {
+    "vref": 1094,
+    "sensor_nh3": {
+      "i0": -0.32,
+      "di": 11.20,
+      "bias": 595.0,
+      "ser": 3
+    },
+    "sensor_so2": {
+      "i0": 0,
+      "di": 12.60,
+      "bias": 596.0,
+      "ser": 5
+    },
+    "sensor_h2s": {
+      "i0": -0.08,
+      "di": 38,
+      "bias": 597.0,
+      "ser": 2
+    }
+  }
+}
