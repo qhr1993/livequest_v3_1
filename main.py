@@ -33,7 +33,7 @@ import pycom
 import peripheral_query
 import os
 import gc
-import uos
+import uio
 import ujson
 
 class Clock:
@@ -63,8 +63,7 @@ p_in_mod = Pin('P12', mode=Pin.IN , pull = Pin.PULL_UP)
 if p_in_mod() == 0:
     print('[1]MODE_1 selected. Entering sensor zero-point calibration mode...')
     calibration(1, psd_json["calibration"]["vref"])
-    break
-p_in_mod.deinit()
+    sys.exit()
 
 time.sleep(0.5)
 
@@ -77,9 +76,7 @@ time.sleep(0.5)
 if p_in_mod() == 0:
     print('[1]MODE_0 selected. Entering ADC bias calibration mode...')
     calibration(0,psd_json["calibration"]["vref"])
-    break
-p_in_mod.deinit()
-p_out_mod.deinit()
+    sys.exit()
 
 print('[1]MODE_2 selected. Entering normal operation...')
 
@@ -143,7 +140,6 @@ while (1):
             rcvd = rcvd_split[i]
             #print(rcvd)
             if state == 0 and len(rcvd)>=12:
-                #pycom.rgbled(0x110000)
                 if (rcvd[12]==0x0D):
                     if (rcvd[11]==0x08): # broadcast
                         print ('[0]Received gateway broadcast...')
@@ -169,12 +165,11 @@ while (1):
                             state = 1
                             p_out_led.value(0)
                             packet_number = 0
-                            #pycom.rgbled(0x000000)
                     else :
                         time.sleep(0.01)
             elif state == 1 and len(rcvd)>=12:
-                #pycom.rgbled(0x000000)
                 if (rcvd[12]==0x0E): #gateway polling
+                    crc = 0x00
                     pdata_bytes = peripheral_query.peripheral_query(1,p_out_ctrla,p_out_ctrlb)
                     print('[1]Peripheral data collected...')
                     upload_raw = (header[1:3] + dev_addr + b'\x00' + struct.pack('>h',packet_number)
@@ -191,8 +186,7 @@ while (1):
                                 + b'\x00\x0A\x00\xFD\x01' + make_data_bytes(pdata_bytes.date,0)
                                 + b'\x00\x0B\x00\xFE\x00' + make_data_bytes(pdata_bytes.time,1)
                                 + b'\x00\x0C\x00\x05\x00' + make_data_bytes(pdata_bytes.lux,1)
-                                + b'\x00\x0D\x00\xF9\x00' + make_data_bytes(pdata_bytes.current,1)
-                    crc = 0x00
+                                + b'\x00\x0D\x00\xF9\x00' + make_data_bytes(pdata_bytes.current,1))
                     for bit in upload_raw:
                         crc = crc + bit
                         crc = crc & 0xFF # calculate checksum
