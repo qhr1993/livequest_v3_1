@@ -91,9 +91,11 @@ def _get_sht31_temp_from_buffer(data):
     return unadjusted
 
 def _get_filtered_mvolts(adc_instance,vr):
+    from peripheral_query import GasData
+    import time
     iter_t_times = 20
     iter_times = 0
-    GasData gdata
+    gdata = GasData()
     gdata.NH3 = 0
     gdata.SO2 = 0
     gdata.H2S = 0
@@ -178,7 +180,7 @@ def peripheral_query(is_init,p_out_ctrla,p_out_ctrlb):
     outer_iter_times = 20
     outer_buff_NH3 = []
     outer_buff_SO2 = []
-    outer_buff_NH3 = []
+    outer_buff_H2S = []
 
     while outer_iter < outer_iter_times:
         filtered_mvolts = _get_filtered_mvolts(adc0,vref)

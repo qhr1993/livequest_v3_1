@@ -1,17 +1,18 @@
 def calibration(mode,vref):
     # mode => 0 adc calibration
     # mode => 1 sensor calibration
-    import peripheral_query
+    from peripheral_query import _get_filtered_mvolts
     import time
     import ujson
     import uio
     from machine import Pin
+    from machine import ADC
     from peripheral_query import GasData
 
     print('[4]===================')
 
-    calibration_frequency = 20 # seconds
-    calibration_times = 100
+    calibration_frequency = 1 # seconds
+    calibration_times = 10
 
     calibration_NH3 = []
     calibration_SO2 = []
@@ -19,14 +20,14 @@ def calibration(mode,vref):
 
     iter_calibration = 0
 
-    while iter_calibration < calibration_times:
+    while iter_calibration < calibration_times :
         adc0 = ADC(id=0)
 
         outer_iter = 0
         outer_iter_times = 20
         outer_buff_NH3 = []
         outer_buff_SO2 = []
-        outer_buff_NH3 = []
+        outer_buff_H2S = []
 
         while outer_iter < outer_iter_times:
             filtered_mvolts = _get_filtered_mvolts(adc0,vref)
@@ -37,7 +38,7 @@ def calibration(mode,vref):
         buff_nh3 = sum(outer_buff_NH3)/outer_iter_times
         buff_so2 = sum(outer_buff_SO2)/outer_iter_times
         buff_h2s = sum(outer_buff_H2S)/outer_iter_times
-        print('[4]sample #: ' + ('%d' % (iter_calibration + 1)) + ' / ' + ('%d' % (calibration_times + 1)))
+        print('[4]sample #: ' + ('%d' % (iter_calibration + 1)) + ' / ' + ('%d' % (calibration_times)))
         print('[4]sample NH3: ' + ('%.1f' % (buff_nh3)))
         print('[4]sample SO2: ' + ('%.1f' % (buff_so2)))
         print('[4]sample H2S: ' + ('%.1f' % (buff_h2s)))
@@ -50,9 +51,9 @@ def calibration(mode,vref):
         iter_calibration = iter_calibration + 1
         time.sleep(calibration_frequency)
 
-    cfg_nh3 = sum(calibration_nh3)/calibration_times
-    cfg_so2 = sum(calibration_so2)/calibration_times
-    cfg_h2s = sum(calibration_h2s)/calibration_times
+    cfg_nh3 = sum(calibration_NH3)/calibration_times
+    cfg_so2 = sum(calibration_SO2)/calibration_times
+    cfg_h2s = sum(calibration_H2S)/calibration_times
 
     with uio.open('/flash/configure.json', 'r', encoding = "utf-8") as handle:
         psd_json = ujson.load(handle)
@@ -74,5 +75,6 @@ def calibration(mode,vref):
         print('[4]H2S zero-drift: '+ ('%.1f' % ((cfg_h2s - psd_json["calibration"]["sensor_h2s"]["bias"])/624)))
 
     with uio.open('/flash/configure.json', 'w', encoding = "utf-8") as handle:
-        ujson.dumps(psd_json, handle)
-        print('[4]Configure file written...)
+        json_r_str = ujson.dumps(psd_json)
+        handle.write(json_r_str)
+        print('[4]Configure file written...')

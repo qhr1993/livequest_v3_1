@@ -35,6 +35,7 @@ import os
 import gc
 import uio
 import ujson
+import calibration
 
 class Clock:
     def __init__(self):
@@ -59,23 +60,25 @@ with uio.open('/flash/configure.json', 'r', encoding = "utf-8") as handle:
     psd_json = ujson.load(handle)
 
 p_in_mod = Pin('P12', mode=Pin.IN , pull = Pin.PULL_UP)
+p_out_mod = Pin('P11', mode=Pin.OUT)
+
+p_out_mod.value(1)
 
 if p_in_mod() == 0:
     print('[1]MODE_1 selected. Entering sensor zero-point calibration mode...')
-    calibration(1, psd_json["calibration"]["vref"])
+    calibration.calibration(1, psd_json["calibration"]["vref"])
     sys.exit()
 
 time.sleep(0.5)
 
 p_in_mod = Pin('P12', mode=Pin.IN , pull = Pin.PULL_UP)
-p_out_mod = Pin('P11', mode=Pin.OUT)
 
 p_out_mod.value(0)
 time.sleep(0.5)
 
 if p_in_mod() == 0:
     print('[1]MODE_0 selected. Entering ADC bias calibration mode...')
-    calibration(0,psd_json["calibration"]["vref"])
+    calibration.calibration(0,psd_json["calibration"]["vref"])
     sys.exit()
 
 print('[1]MODE_2 selected. Entering normal operation...')
